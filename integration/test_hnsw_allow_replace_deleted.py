@@ -153,6 +153,16 @@ class TestReplaceDeletedOnLoad(ValkeySearchTestCaseDebugMode):
         for i in range(2):
             client.delete(f"doc:{i}")
 
+        # Verify KNN search returns 2 indexes after delete
+        query_vec = struct.pack('<4f', *[100.0, 100.1, 100.2, 100.3])
+        search_result = client.execute_command(
+            "FT.SEARCH", "idx",
+            "*=>[KNN 2 @vector $q]",
+            "PARAMS", "2", "q", query_vec,
+        )
+        assert search_result[0] == 2, \
+            f"KNN search after delete returned {search_result[0]}, expected 2"
+
         # RDB save + reload
         client.execute_command("SAVE")
         self.server.restart(remove_rdb=False)
@@ -167,8 +177,14 @@ class TestReplaceDeletedOnLoad(ValkeySearchTestCaseDebugMode):
             vec = struct.pack('<4f', *[200.0 + i + 0.1 * d for d in range(4)])
             client.hset(f"doc:new{i}", mapping={"vector": vec})
 
-        waiters.wait_for_equal(
-            lambda: hnsw_index.info(client).num_docs, 4, timeout=10
+        # Verify KNN search returns expected results
+        query_vec = struct.pack('<4f', *[100.0, 100.1, 100.2, 100.3])
+        search_result = client.execute_command(
+            "FT.SEARCH", "idx",
+            "*=>[KNN 4 @vector $q]",
+            "PARAMS", "2", "q", query_vec,
         )
+        assert search_result[0] == 4, \
+            f"KNN search returned {search_result[0]}, expected 4"
 
         client.execute_command("FT.DROPINDEX", "idx")
